@@ -291,7 +291,7 @@ module Isuconp
         'SELECT `posts`.`id`, `posts`.`user_id`, `posts`.`body`, `posts`.`mime`, `posts`.`created_at`, `users`.`account_name`
          FROM `posts`
          JOIN `users` ON `posts`.`user_id` = `users`.`id`
-         WHERE `created_at` <= ? AND `users`.`del_flg` = 0
+         WHERE `posts`.`created_at` <= ? AND `users`.`del_flg` = 0
          ORDER BY `created_at` DESC
          LIMIT ?'
       ).execute(
@@ -308,7 +308,7 @@ module Isuconp
         'SELECT `posts`.`id`, `posts`.`user_id`, `posts`.`mime`, `posts`.`imgdata`, `posts`.`body`, `posts`.`created_at`, `users`.`account_name`
          FROM `posts`
          JOIN `users` ON `posts`.`user_id` = `users`.`id`
-         WHERE `id` = ?
+         WHERE `posts`.`id` = ?
          LIMIT ?'
       ).execute(
         params[:id],
