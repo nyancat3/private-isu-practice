@@ -226,7 +226,7 @@ module Isuconp
     get '/' do
       me = get_session_user()
 
-      results = db.query(
+      results = db.prepare(
         'SELECT `posts`.`id`, `posts`.`user_id`, `posts`.`body`, `posts`.`created_at`, `posts`.`mime`, `users`.`account_name`
          FROM `posts`
          JOIN `users` ON `posts`.`user_id` = `users`.`id`
