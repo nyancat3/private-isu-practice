@@ -19,3 +19,6 @@ portal/tmp
 
 # Ignore GitHub Actions
 .github/
+
+# Ignore static images
+webapp/public/image
