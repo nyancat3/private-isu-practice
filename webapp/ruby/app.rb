@@ -362,10 +362,10 @@ module Isuconp
         headers['Content-Type'] = post[:mime]
 
         # Write the image data to IMAGE_DIR
-        image_file_path = IMAGE_DIR + "/#{post[:id]}.#{params[:ext]}"
-        file = File.open(image_file_path, 'w')
-        file.write(post[:imgdata])
-        file.close
+        # image_file_path = IMAGE_DIR + "/#{post[:id]}.#{params[:ext]}"
+        # file = File.open(image_file_path, 'w')
+        # file.write(post[:imgdata])
+        # file.close
 
         return post[:imgdata]
       end
