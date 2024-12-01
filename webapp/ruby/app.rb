@@ -3,6 +3,7 @@ require 'mysql2'
 require 'rack-flash'
 require 'shellwords'
 require 'rack/session/dalli'
+require 'fileutils'
 
 module Isuconp
   class App < Sinatra::Base
@@ -13,6 +14,8 @@ module Isuconp
     UPLOAD_LIMIT = 10 * 1024 * 1024 # 10mb
 
     POSTS_PER_PAGE = 20
+
+    IMAGE_DIR = File.expand_path('../../public/image', __FILE__)
 
     helpers do
       def config
@@ -304,32 +307,40 @@ module Isuconp
 
       if params['file']
         mime = ''
+        ext = ''
         # 投稿のContent-Typeからファイルのタイプを決定する
         if params["file"][:type].include? "jpeg"
           mime = "image/jpeg"
+          ext = 'jpg'
         elsif params["file"][:type].include? "png"
           mime = "image/png"
+          ext = 'png'
         elsif params["file"][:type].include? "gif"
           mime = "image/gif"
+          ext = 'gif'
         else
           flash[:notice] = '投稿できる画像形式はjpgとpngとgifだけです'
           redirect '/', 302
         end
 
-        if params['file'][:tempfile].read.length > UPLOAD_LIMIT
+        if params['file'][:tempfile].size > UPLOAD_LIMIT
           flash[:notice] = 'ファイルサイズが大きすぎます'
           redirect '/', 302
         end
 
-        params['file'][:tempfile].rewind
         query = 'INSERT INTO `posts` (`user_id`, `mime`, `imgdata`, `body`) VALUES (?,?,?,?)'
         db.prepare(query).execute(
           me[:id],
           mime,
-          params["file"][:tempfile].read,
+          '', # Do not insert binary image data into DB
           params["body"],
         )
         pid = db.last_id
+
+        # Move the uploaded image file to IMAGE_DIR
+        image_file_path = IMAGE_DIR + "/#{pid}.#{ext}"
+        FileUtils.mv(params['file'][:tempfile], image_file_path)
+        FileUtils.chmod(0644, image_file_path)
 
         redirect "/posts/#{pid}", 302
       else
@@ -349,6 +360,13 @@ module Isuconp
           (params[:ext] == "png" && post[:mime] == "image/png") ||
           (params[:ext] == "gif" && post[:mime] == "image/gif")
         headers['Content-Type'] = post[:mime]
+
+        # Write the image data to IMAGE_DIR
+        # image_file_path = IMAGE_DIR + "/#{post[:id]}.#{params[:ext]}"
+        # file = File.open(image_file_path, 'w')
+        # file.write(post[:imgdata])
+        # file.close
+
         return post[:imgdata]
       end
 
