@@ -122,12 +122,11 @@ module Isuconp
           end
           post[:comments] = comments.reverse
 
-          post[:user] = db.prepare('SELECT * FROM `users` WHERE `id` = ?').execute(
-            post[:user_id]
-          ).first
+          post[:user] = {
+            account_name: post[:account_name]
+          }
 
-          posts.push(post) if post[:user][:del_flg] == 0
-          break if posts.length >= POSTS_PER_PAGE
+          posts.push(post)
         end
 
         posts
@@ -227,7 +226,16 @@ module Isuconp
     get '/' do
       me = get_session_user()
 
-      results = db.query('SELECT `id`, `user_id`, `body`, `created_at`, `mime` FROM `posts` ORDER BY `created_at` DESC')
+      results = db.query(
+        'SELECT `posts`.`id`, `posts`.`user_id`, `posts`.`body`, `posts`.`created_at`, `posts`.`mime`, `users`.`account_name`
+         FROM `posts`
+         JOIN `users` ON `posts`.`user_id` = `users`.`id`
+         WHERE `users`.`del_flg` = 0
+         ORDER BY `created_at` DESC
+         LIMIT ?'
+      ).execute(
+        POSTS_PER_PAGE
+      )
       posts = make_posts(results)
 
       erb :index, layout: :layout, locals: { posts: posts, me: me }
@@ -242,8 +250,16 @@ module Isuconp
         return 404
       end
 
-      results = db.prepare('SELECT `id`, `user_id`, `body`, `mime`, `created_at` FROM `posts` WHERE `user_id` = ? ORDER BY `created_at` DESC').execute(
-        user[:id]
+      results = db.prepare(
+        'SELECT `posts`.`id`, `posts`.`user_id`, `posts`.`body`, `posts`.`mime`, `posts`.`created_at`, `users`.`account_name`
+         FROM `posts`
+         JOIN `users` ON `posts`.`user_id` = `users`.`id`
+         WHERE `user_id` = ? AND `users`.`del_flg` = 0
+         ORDER BY `created_at` DESC
+         LIMIT ?'
+      ).execute(
+        user[:id],
+        POSTS_PER_PAGE
       )
       posts = make_posts(results)
 
@@ -271,8 +287,16 @@ module Isuconp
 
     get '/posts' do
       max_created_at = params['max_created_at']
-      results = db.prepare('SELECT `id`, `user_id`, `body`, `mime`, `created_at` FROM `posts` WHERE `created_at` <= ? ORDER BY `created_at` DESC').execute(
-        max_created_at.nil? ? nil : Time.iso8601(max_created_at).localtime
+      results = db.prepare(
+        'SELECT `posts`.`id`, `posts`.`user_id`, `posts`.`body`, `posts`.`mime`, `posts`.`created_at`, `users`.`account_name`
+         FROM `posts`
+         JOIN `users` ON `posts`.`user_id` = `users`.`id`
+         WHERE `created_at` <= ? AND `users`.`del_flg` = 0
+         ORDER BY `created_at` DESC
+         LIMIT ?'
+      ).execute(
+        max_created_at.nil? ? nil : Time.iso8601(max_created_at).localtime,
+        POSTS_PER_PAGE
       )
       posts = make_posts(results)
 
@@ -280,8 +304,15 @@ module Isuconp
     end
 
     get '/posts/:id' do
-      results = db.prepare('SELECT * FROM `posts` WHERE `id` = ?').execute(
-        params[:id]
+      results = db.prepare(
+        'SELECT `posts`.`id`, `posts`.`user_id`, `posts`.`mime`, `posts`.`imgdata`, `posts`.`body`, `posts`.`created_at`, `users`.`account_name`
+         FROM `posts`
+         JOIN `users` ON `posts`.`user_id` = `users`.`id`
+         WHERE `id` = ?
+         LIMIT ?'
+      ).execute(
+        params[:id],
+        POSTS_PER_PAGE
       )
       posts = make_posts(results, all_comments: true)
 
