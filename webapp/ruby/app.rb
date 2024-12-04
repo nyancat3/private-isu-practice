@@ -4,9 +4,11 @@ require 'rack-flash'
 require 'shellwords'
 require 'rack/session/dalli'
 require 'fileutils'
+require 'dalli'
 
 module Isuconp
   class App < Sinatra::Base
+    # Use Rack::Session::Dalli for session management: session[:user], session[:csrf_token], etc.
     use Rack::Session::Dalli, autofix_keys: true, secret: ENV['ISUCONP_SESSION_SECRET'] || 'sendagaya', memcache_server: ENV['ISUCONP_MEMCACHED_ADDRESS'] || 'localhost:11211'
     use Rack::Flash
     set :public_folder, File.expand_path('../../public', __FILE__)
@@ -44,6 +46,12 @@ module Isuconp
         client.query_options.merge!(symbolize_keys: true, database_timezone: :local, application_timezone: :local)
         Thread.current[:isuconp_db] = client
         client
+      end
+
+      def memcached
+        @memcached_client ||= Dalli::Client.new(
+          ENV['ISUCONP_MEMCACHED_ADDRESS'] || 'localhost:11211', { :namespace => "isuconp", :compress => true }
+        )
       end
 
       def db_initialize
@@ -104,23 +112,37 @@ module Isuconp
       def make_posts(results, all_comments: false)
         posts = []
         results.to_a.each do |post|
-          post[:comment_count] = db.prepare('SELECT COUNT(*) AS `count` FROM `comments` WHERE `post_id` = ?').execute(
-            post[:id]
-          ).first[:count]
+          # comments count
+          cached_comment_count = memcached.get("comments.#{post[:id]}.count")
+          post[:comment_count] = if cached_comment_count
+                                   cached_comment_count.to_i
+                                 else
+                                   db.prepare('SELECT COUNT(*) AS `count` FROM `comments` WHERE `post_id` = ?')
+                                     .execute(post[:id])
+                                     .first[:count]
+                                 end
+          memcached.set("comments.#{post[:id]}.count", post[:comment_count]) # TODO: Set TTL without causing errors
 
-          query = 'SELECT * FROM `comments` WHERE `post_id` = ? ORDER BY `created_at` DESC'
-          unless all_comments
-            query += ' LIMIT 3'
+          # comments
+          cached_comments = memcached.get("comments.#{post[:id]}.#{all_comments}")
+          if cached_comments
+            post[:comments] = cached_comments
+          else
+            query = 'SELECT * FROM `comments` WHERE `post_id` = ? ORDER BY `created_at` DESC'
+            unless all_comments
+              query += ' LIMIT 3'
+            end
+            comments = db.prepare(query).execute(
+              post[:id]
+            ).to_a
+            comments.each do |comment|
+              comment[:user] = db.prepare('SELECT * FROM `users` WHERE `id` = ?').execute(
+                comment[:user_id]
+              ).first
+            end
+            post[:comments] = comments.reverse
           end
-          comments = db.prepare(query).execute(
-            post[:id]
-          ).to_a
-          comments.each do |comment|
-            comment[:user] = db.prepare('SELECT * FROM `users` WHERE `id` = ?').execute(
-              comment[:user_id]
-            ).first
-          end
-          post[:comments] = comments.reverse
+          memcached.set("comments.#{post[:id]}.#{all_comments}", post[:comments]) # TODO: Set TTL without causing errors
 
           post[:user] = {
             account_name: post[:account_name]
