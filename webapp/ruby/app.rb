@@ -8,6 +8,7 @@ require 'dalli'
 
 module Isuconp
   class App < Sinatra::Base
+    # Use Rack::Session::Dalli for session management: session[:user], session[:csrf_token], etc.
     use Rack::Session::Dalli, autofix_keys: true, secret: ENV['ISUCONP_SESSION_SECRET'] || 'sendagaya', memcache_server: ENV['ISUCONP_MEMCACHED_ADDRESS'] || 'localhost:11211'
     use Rack::Flash
     set :public_folder, File.expand_path('../../public', __FILE__)
@@ -49,7 +50,7 @@ module Isuconp
 
       def memcached
         @memcached_client ||= Dalli::Client.new(
-          ENV['ISUCONP_MEMCACHED_ADDRESS'] || 'localhost:11211', { :namespace => "private-isu", :compress => true }
+          ENV['ISUCONP_MEMCACHED_ADDRESS'] || 'localhost:11211', { :namespace => "isuconp", :compress => true }
         )
       end
 
@@ -120,7 +121,7 @@ module Isuconp
                                      .execute(post[:id])
                                      .first[:count]
                                  end
-          memcached.set("comments.#{post[:id]}.count", post[:comment_count])
+          memcached.set("comments.#{post[:id]}.count", post[:comment_count], 300) # TTL 5 minutes
 
           # comments
           cached_comments = memcached.get("comments.#{post[:id]}.#{all_comments}")
@@ -141,7 +142,7 @@ module Isuconp
             end
             post[:comments] = comments.reverse
           end
-          memcached.set("comments.#{post[:id]}.#{all_comments}", post[:comments])
+          memcached.set("comments.#{post[:id]}.#{all_comments}", post[:comments], 300) # TTL 5 minutes
 
           post[:user] = {
             account_name: post[:account_name]
