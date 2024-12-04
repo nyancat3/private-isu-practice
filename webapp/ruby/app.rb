@@ -1,5 +1,5 @@
 require 'sinatra/base'
-require 'mysql2'
+require 'mysql2-cs-bind'
 require 'rack-flash'
 require 'shellwords'
 require 'rack/session/dalli'
@@ -54,12 +54,12 @@ module Isuconp
         sql << 'UPDATE users SET del_flg = 0'
         sql << 'UPDATE users SET del_flg = 1 WHERE id % 50 = 0'
         sql.each do |s|
-          db.prepare(s).execute
+          db.xquery(s).execute
         end
       end
 
       def try_login(account_name, password)
-        user = db.prepare('SELECT * FROM users WHERE account_name = ? AND del_flg = 0').execute(account_name).first
+        user = db.xquery('SELECT * FROM users WHERE account_name = ? AND del_flg = 0', account_name).first
 
         if user && calculate_passhash(user[:account_name], password) == user[:passhash]
           return user
@@ -93,9 +93,7 @@ module Isuconp
 
       def get_session_user()
         if session[:user]
-          db.prepare('SELECT * FROM `users` WHERE `id` = ?').execute(
-            session[:user][:id]
-          ).first
+          db.xquery('SELECT * FROM `users` WHERE `id` = ?', session[:user][:id]).first
         else
           nil
         end
@@ -104,7 +102,8 @@ module Isuconp
       def make_posts(results, all_comments: false)
         posts = []
         results.to_a.each do |post|
-          post[:comment_count] = db.prepare('SELECT COUNT(*) AS `count` FROM `comments` WHERE `post_id` = ?').execute(
+          post[:comment_count] = db.xquery(
+            'SELECT COUNT(*) AS `count` FROM `comments` WHERE `post_id` = ?',
             post[:id]
           ).first[:count]
 
@@ -112,13 +111,9 @@ module Isuconp
           unless all_comments
             query += ' LIMIT 3'
           end
-          comments = db.prepare(query).execute(
-            post[:id]
-          ).to_a
+          comments = db.xquery(query, post[:id]).to_a
           comments.each do |comment|
-            comment[:user] = db.prepare('SELECT * FROM `users` WHERE `id` = ?').execute(
-              comment[:user_id]
-            ).first
+            comment[:user] = db.xquery('SELECT * FROM `users` WHERE `id` = ?', comment[:user_id]).first
           end
           post[:comments] = comments.reverse
 
@@ -198,7 +193,7 @@ module Isuconp
         return
       end
 
-      user = db.prepare('SELECT 1 FROM users WHERE `account_name` = ?').execute(account_name).first
+      user = db.xquery('SELECT 1 FROM users WHERE `account_name` = ?', account_name).first
       if user
         flash[:notice] = 'アカウント名がすでに使われています'
         redirect '/register', 302
@@ -206,7 +201,8 @@ module Isuconp
       end
 
       query = 'INSERT INTO `users` (`account_name`, `passhash`) VALUES (?,?)'
-      db.prepare(query).execute(
+      db.xquery(
+        query,
         account_name,
         calculate_passhash(account_name, password)
       )
@@ -226,14 +222,13 @@ module Isuconp
     get '/' do
       me = get_session_user()
 
-      results = db.prepare(
+      results = db.xquery(
         'SELECT `posts`.`id`, `posts`.`user_id`, `posts`.`body`, `posts`.`created_at`, `posts`.`mime`, `users`.`account_name`
          FROM `posts`
          JOIN `users` ON `posts`.`user_id` = `users`.`id`
          WHERE `users`.`del_flg` = 0
          ORDER BY `created_at` DESC
-         LIMIT ?'
-      ).execute(
+         LIMIT ?',
         POSTS_PER_PAGE
       )
       posts = make_posts(results)
@@ -242,7 +237,8 @@ module Isuconp
     end
 
     get '/@:account_name' do
-      user = db.prepare('SELECT * FROM `users` WHERE `account_name` = ? AND `del_flg` = 0').execute(
+      user = db.xquery(
+        'SELECT * FROM `users` WHERE `account_name` = ? AND `del_flg` = 0',
         params[:account_name]
       ).first
 
@@ -250,32 +246,34 @@ module Isuconp
         return 404
       end
 
-      results = db.prepare(
+      results = db.xquery(
         'SELECT `posts`.`id`, `posts`.`user_id`, `posts`.`body`, `posts`.`mime`, `posts`.`created_at`, `users`.`account_name`
          FROM `posts`
          JOIN `users` ON `posts`.`user_id` = `users`.`id`
          WHERE `user_id` = ? AND `users`.`del_flg` = 0
          ORDER BY `created_at` DESC
-         LIMIT ?'
-      ).execute(
+         LIMIT ?',
         user[:id],
         POSTS_PER_PAGE
       )
       posts = make_posts(results)
 
-      comment_count = db.prepare('SELECT COUNT(*) AS count FROM `comments` WHERE `user_id` = ?').execute(
+      comment_count = db.xquery(
+        'SELECT COUNT(*) AS count FROM `comments` WHERE `user_id` = ?',
         user[:id]
       ).first[:count]
 
-      post_ids = db.prepare('SELECT `id` FROM `posts` WHERE `user_id` = ?').execute(
+      post_ids = db.xquery(
+        'SELECT `id` FROM `posts` WHERE `user_id` = ?',
         user[:id]
-      ).map{|post| post[:id]}
+      ).map { |post| post[:id] }
       post_count = post_ids.length
 
       commented_count = 0
       if post_count > 0
         placeholder = (['?'] * post_ids.length).join(",")
-        commented_count = db.prepare("SELECT COUNT(*) AS count FROM `comments` WHERE `post_id` IN (#{placeholder})").execute(
+        commented_count = db.xquery(
+          "SELECT COUNT(*) AS count FROM `comments` WHERE `post_id` IN (#{placeholder})",
           *post_ids
         ).first[:count]
       end
@@ -287,14 +285,13 @@ module Isuconp
 
     get '/posts' do
       max_created_at = params['max_created_at']
-      results = db.prepare(
+      results = db.xquery(
         'SELECT `posts`.`id`, `posts`.`user_id`, `posts`.`body`, `posts`.`mime`, `posts`.`created_at`, `users`.`account_name`
          FROM `posts`
          JOIN `users` ON `posts`.`user_id` = `users`.`id`
          WHERE `posts`.`created_at` <= ? AND `users`.`del_flg` = 0
          ORDER BY `created_at` DESC
-         LIMIT ?'
-      ).execute(
+         LIMIT ?',
         max_created_at.nil? ? nil : Time.iso8601(max_created_at).localtime,
         POSTS_PER_PAGE
       )
@@ -304,13 +301,12 @@ module Isuconp
     end
 
     get '/posts/:id' do
-      results = db.prepare(
+      results = db.xquery(
         'SELECT `posts`.`id`, `posts`.`user_id`, `posts`.`mime`, `posts`.`imgdata`, `posts`.`body`, `posts`.`created_at`, `users`.`account_name`
          FROM `posts`
          JOIN `users` ON `posts`.`user_id` = `users`.`id`
          WHERE `posts`.`id` = ?
-         LIMIT ?'
-      ).execute(
+         LIMIT ?',
         params[:id],
         POSTS_PER_PAGE
       )
@@ -360,7 +356,8 @@ module Isuconp
         end
 
         query = 'INSERT INTO `posts` (`user_id`, `mime`, `imgdata`, `body`) VALUES (?,?,?,?)'
-        db.prepare(query).execute(
+        db.xquery(
+          query,
           me[:id],
           mime,
           '', # Do not insert binary image data into DB
@@ -385,7 +382,10 @@ module Isuconp
         return ""
       end
 
-      post = db.prepare('SELECT * FROM `posts` WHERE `id` = ?').execute(params[:id].to_i).first
+      post = db.xquery(
+        'SELECT * FROM `posts` WHERE `id` = ?',
+        params[:id].to_i
+      ).first
 
       if (params[:ext] == "jpg" && post[:mime] == "image/jpeg") ||
           (params[:ext] == "png" && post[:mime] == "image/png") ||
@@ -421,7 +421,8 @@ module Isuconp
       post_id = params['post_id']
 
       query = 'INSERT INTO `comments` (`post_id`, `user_id`, `comment`) VALUES (?,?,?)'
-      db.prepare(query).execute(
+      db.xquery(
+        query,
         post_id,
         me[:id],
         params['comment']
@@ -464,7 +465,7 @@ module Isuconp
       query = 'UPDATE `users` SET `del_flg` = ? WHERE `id` = ?'
 
       params['uid'].each do |id|
-        db.prepare(query).execute(1, id.to_i)
+        db.xquery(query, 1, id.to_i)
       end
 
       redirect '/admin/banned', 302
