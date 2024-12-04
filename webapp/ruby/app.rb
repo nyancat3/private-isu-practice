@@ -92,7 +92,7 @@ module Isuconp
       end
 
       def get_session_user()
-        if session[:user]
+        if session[:user]&.[](:id)
           db.xquery('SELECT * FROM `users` WHERE `id` = ?', session[:user][:id]).first
         else
           nil
