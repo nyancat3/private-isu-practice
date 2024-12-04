@@ -121,7 +121,7 @@ module Isuconp
                                      .execute(post[:id])
                                      .first[:count]
                                  end
-          memcached.set("comments.#{post[:id]}.count", post[:comment_count], 300) # TTL 5 minutes
+          memcached.set("comments.#{post[:id]}.count", post[:comment_count]) # TODO: Set TTL without causing errors
 
           # comments
           cached_comments = memcached.get("comments.#{post[:id]}.#{all_comments}")
@@ -142,7 +142,7 @@ module Isuconp
             end
             post[:comments] = comments.reverse
           end
-          memcached.set("comments.#{post[:id]}.#{all_comments}", post[:comments], 300) # TTL 5 minutes
+          memcached.set("comments.#{post[:id]}.#{all_comments}", post[:comments]) # TODO: Set TTL without causing errors
 
           post[:user] = {
             account_name: post[:account_name]
