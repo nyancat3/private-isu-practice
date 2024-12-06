@@ -251,6 +251,7 @@ module Isuconp
       results = db.prepare(
         'SELECT `posts`.`id`, `posts`.`user_id`, `posts`.`body`, `posts`.`created_at`, `posts`.`mime`, `users`.`account_name`
          FROM `posts`
+         FORCE INDEX (`idx_created_at`)
          JOIN `users` ON `posts`.`user_id` = `users`.`id`
          WHERE `users`.`del_flg` = 0
          ORDER BY `created_at` DESC
