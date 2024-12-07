@@ -5,6 +5,7 @@ require 'shellwords'
 require 'rack/session/dalli'
 require 'fileutils'
 require 'dalli'
+require 'digest'
 
 module Isuconp
   class App < Sinatra::Base
@@ -87,8 +88,7 @@ module Isuconp
       end
 
       def digest(src)
-        # opensslのバージョンによっては (stdin)= というのがつくので取る
-        `printf "%s" #{Shellwords.shellescape(src)} | openssl dgst -sha512 | sed 's/^.*= //'`.strip
+        Digest::SHA512.hexdigest(src)
       end
 
       def calculate_salt(account_name)
